@@ -27,7 +27,7 @@ HOTKEY_ID_TOP_LEFT = 1
 HOTKEY_ID_BOTTOM_RIGHT = 2
 VK_LEFT = 0x25
 VK_RIGHT = 0x27
-GEMINI_MODEL_NAME = "gemini-2.5-flash"
+GEMINI_MODEL_NAME = "gemini-3.1-pro-preview"
 GEMINI_IMAGE_PROMPT = (
     "You are solving a multiple-choice quiz from the screenshot. "
     "Return valid JSON only (no markdown) using this schema: "
