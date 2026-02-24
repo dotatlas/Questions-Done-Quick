@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 import re
 import string
-import subprocess
 import threading
 import time
 from typing import Any, List
@@ -70,7 +69,6 @@ class TrayScreenshotApp:
         self.logs_directory = Path("logs")
         self.gemini_error_log_file = self.logs_directory / "gemini_errors.txt"
         self.gemini_output_log_file = self.logs_directory / "gemini_output.txt"
-        self.free_response_answer_file = self.logs_directory / "free_response_answer.txt"
         self.gemini_model_name = GEMINI_MODEL_NAME
         self.gemini_prompt_text = GEMINI_IMAGE_PROMPT
         self._status_icons = {
@@ -176,27 +174,24 @@ class TrayScreenshotApp:
         with self._state_lock:
             return self._free_response_answer_text is not None
 
-    def _write_free_response_file(self, answer_text: str) -> Path:
-        self.logs_directory.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().isoformat(timespec="seconds")
-        with self.free_response_answer_file.open("w", encoding="utf-8") as handle:
-            handle.write(f"[{timestamp}]\n")
-            handle.write(f"{answer_text.strip()}\n")
-        return self.free_response_answer_file
+    def _truncate_notification_text(self, text: str) -> str:
+        cleaned = text.strip()
+        if len(cleaned) <= GEMINI_NOTIFICATION_MAX_LENGTH:
+            return cleaned
+        no_spaces = cleaned.replace(" ", "")
+        if len(no_spaces) <= GEMINI_NOTIFICATION_MAX_LENGTH:
+            return no_spaces
+        return no_spaces[: GEMINI_NOTIFICATION_MAX_LENGTH - 1].rstrip() + "…"
 
-    def _open_free_response_in_notepad(self) -> None:
+    def _notify_free_response(self) -> None:
         with self._state_lock:
             answer_text = self._free_response_answer_text
         if answer_text is None:
             return
-        answer_file = self._write_free_response_file(answer_text)
-        try:
-            subprocess.Popen(["notepad.exe", str(answer_file)])
-        except OSError:
-            return
+        self.icon.notify(self._truncate_notification_text(answer_text), "Free Response")
 
     def _on_open_free_response(self, _icon: Any, _item: Any) -> None:
-        self._open_free_response_in_notepad()
+        self._notify_free_response()
 
     def _extract_gemini_json(self, response_text: str) -> dict[str, Any] | None:
         compact = response_text.strip()

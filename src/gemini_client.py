@@ -9,6 +9,13 @@ from google.api_core.exceptions import GoogleAPIError, RetryError
 from dotenv import load_dotenv
 
 DEFAULT_MODEL_NAME = "gemini-3.1-pro-preview"
+TEST_MODE_API_KEY = "test"
+TEST_FREE_RESPONSE_JSON = (
+    '{"question_type":"free_response","explanation":"Test mode response with intentionally long text to simulate notification overflow behavior.",'
+    '"verification":"Test mode bypassed Gemini and returned a stress-test payload with long free-response content.",'
+    '"answer":"This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays.",'
+    '"free_response_answer":"This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays. This is a predefined free response answer for testing. This sentence is repeated to create a very long message that is likely to exceed notification limits in some system trays."}'
+)
 MODEL_FALLBACK_PRIORITY = [
     "gemini-3.1-pro-preview",
     "gemini-2.5-pro",
@@ -18,9 +25,20 @@ MODEL_FALLBACK_PRIORITY = [
 ]
 
 
-def initialize_gemini(api_key: str | None = None) -> None:
+def _resolve_api_key(api_key: str | None = None) -> str | None:
     load_dotenv()
-    resolved_key = api_key or os.getenv("GEMINI_API_KEY")
+    return api_key or os.getenv("GEMINI_API_KEY")
+
+
+def _is_test_mode(api_key: str | None = None) -> bool:
+    resolved_key = _resolve_api_key(api_key)
+    if resolved_key is None:
+        return False
+    return resolved_key.strip().lower() == TEST_MODE_API_KEY
+
+
+def initialize_gemini(api_key: str | None = None) -> None:
+    resolved_key = _resolve_api_key(api_key)
     if not resolved_key:
         raise ValueError("Missing Gemini API key. Set GEMINI_API_KEY in .env or pass api_key.")
     genai.configure(api_key=resolved_key)
@@ -103,6 +121,9 @@ def prompt_with_uploaded_image(
     if not prompt.strip():
         raise ValueError("Prompt cannot be empty.")
 
+    if _is_test_mode(api_key=api_key):
+        return TEST_FREE_RESPONSE_JSON
+
     initialize_gemini(api_key=api_key)
     try:
         uploaded_image = upload_image(image_path)
@@ -119,6 +140,9 @@ def prompt_with_uploaded_file(
 ) -> str:
     if not prompt.strip():
         raise ValueError("Prompt cannot be empty.")
+
+    if _is_test_mode(api_key=api_key):
+        return TEST_FREE_RESPONSE_JSON
 
     initialize_gemini(api_key=api_key)
     try:
