@@ -30,6 +30,38 @@ def _resolve_api_key(api_key: str | None = None) -> str | None:
     return api_key or os.getenv("GEMINI_API_KEY")
 
 
+def _resolve_api_key_candidates(api_key: str | None = None) -> list[str]:
+    load_dotenv()
+    if api_key:
+        return [api_key]
+
+    candidates: list[str] = []
+    env_var_names = (
+        "GEMINI_API_KEY",
+        "GEMINI_API_KEY_SECOND",
+        "GEMINI_API_KEY_THIRD",
+        "GEMINI_API_KEY_FOURTH",
+    )
+    for env_var_name in env_var_names:
+        raw_value = os.getenv(env_var_name)
+        if raw_value is None:
+            continue
+        cleaned_value = raw_value.strip()
+        if not cleaned_value or cleaned_value in candidates:
+            continue
+        candidates.append(cleaned_value)
+    return candidates
+
+
+def _describe_key_for_log(api_key_value: str) -> str:
+    cleaned = api_key_value.strip()
+    if not cleaned:
+        return "<empty>"
+    if len(cleaned) <= 8:
+        return cleaned
+    return f"{cleaned[:4]}...{cleaned[-4:]}"
+
+
 def _is_test_mode(api_key: str | None = None) -> bool:
     resolved_key = _resolve_api_key(api_key)
     if resolved_key is None:
@@ -112,6 +144,75 @@ def _generate_with_model_fallback(prompt: str, content_part: Any, primary_model:
     raise RuntimeError("Gemini request failed after model fallback.")
 
 
+def _generate_with_api_key_fallback(
+    prompt: str,
+    content_part: Any,
+    model_name: str,
+    api_key: str | None = None,
+) -> str:
+    api_key_candidates = _resolve_api_key_candidates(api_key=api_key)
+    if not api_key_candidates:
+        raise ValueError("Missing Gemini API key. Set GEMINI_API_KEY in .env or pass api_key.")
+
+    last_error: Exception | None = None
+    for index, candidate_key in enumerate(api_key_candidates):
+        key_label = f"key #{index + 1}"
+        print(f"[Gemini] Using {key_label}: {_describe_key_for_log(candidate_key)}")
+        try:
+            initialize_gemini(api_key=candidate_key)
+            return _generate_with_model_fallback(
+                prompt=prompt,
+                content_part=content_part,
+                primary_model=model_name,
+            )
+        except (GoogleAPIError, RetryError, OSError, ValueError, RuntimeError) as exc:
+            last_error = exc
+            has_another_key = index < len(api_key_candidates) - 1
+            if has_another_key:
+                print(f"[Gemini] {key_label} failed; retrying with next key. Error: {exc}")
+                continue
+            raise RuntimeError(f"Gemini request failed: {exc}") from exc
+
+    if last_error is not None:
+        raise RuntimeError(f"Gemini request failed after API key fallback: {last_error}") from last_error
+    raise RuntimeError("Gemini request failed after API key fallback.")
+
+
+def _generate_from_image_with_api_key_fallback(
+    prompt: str,
+    image_path: str | Path,
+    model_name: str,
+    api_key: str | None = None,
+) -> str:
+    api_key_candidates = _resolve_api_key_candidates(api_key=api_key)
+    if not api_key_candidates:
+        raise ValueError("Missing Gemini API key. Set GEMINI_API_KEY in .env or pass api_key.")
+
+    last_error: Exception | None = None
+    for index, candidate_key in enumerate(api_key_candidates):
+        key_label = f"key #{index + 1}"
+        print(f"[Gemini] Using {key_label}: {_describe_key_for_log(candidate_key)}")
+        try:
+            initialize_gemini(api_key=candidate_key)
+            uploaded_image = upload_image(image_path)
+            return _generate_with_model_fallback(
+                prompt=prompt,
+                content_part=uploaded_image,
+                primary_model=model_name,
+            )
+        except (GoogleAPIError, RetryError, OSError, ValueError, RuntimeError) as exc:
+            last_error = exc
+            has_another_key = index < len(api_key_candidates) - 1
+            if has_another_key:
+                print(f"[Gemini] {key_label} failed; retrying with next key. Error: {exc}")
+                continue
+            raise RuntimeError(f"Gemini request failed: {exc}") from exc
+
+    if last_error is not None:
+        raise RuntimeError(f"Gemini request failed after API key fallback: {last_error}") from last_error
+    raise RuntimeError("Gemini request failed after API key fallback.")
+
+
 def prompt_with_uploaded_image(
     prompt: str,
     image_path: str | Path,
@@ -124,11 +225,14 @@ def prompt_with_uploaded_image(
     if _is_test_mode(api_key=api_key):
         return TEST_FREE_RESPONSE_JSON
 
-    initialize_gemini(api_key=api_key)
     try:
-        uploaded_image = upload_image(image_path)
-        return _generate_with_model_fallback(prompt=prompt, content_part=uploaded_image, primary_model=model_name)
-    except (GoogleAPIError, RetryError, OSError, ValueError) as exc:
+        return _generate_from_image_with_api_key_fallback(
+            prompt=prompt,
+            image_path=image_path,
+            model_name=model_name,
+            api_key=api_key,
+        )
+    except (GoogleAPIError, RetryError, OSError, ValueError, RuntimeError) as exc:
         raise RuntimeError(f"Gemini request failed: {exc}") from exc
 
 
@@ -144,8 +248,12 @@ def prompt_with_uploaded_file(
     if _is_test_mode(api_key=api_key):
         return TEST_FREE_RESPONSE_JSON
 
-    initialize_gemini(api_key=api_key)
     try:
-        return _generate_with_model_fallback(prompt=prompt, content_part=uploaded_file, primary_model=model_name)
-    except (GoogleAPIError, RetryError, OSError, ValueError) as exc:
+        return _generate_with_api_key_fallback(
+            prompt=prompt,
+            content_part=uploaded_file,
+            model_name=model_name,
+            api_key=api_key,
+        )
+    except (GoogleAPIError, RetryError, OSError, ValueError, RuntimeError) as exc:
         raise RuntimeError(f"Gemini request failed: {exc}") from exc

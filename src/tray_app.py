@@ -9,6 +9,7 @@ import re
 import string
 import threading
 import time
+import traceback
 from typing import Any, List
 
 from PIL import Image, ImageDraw
@@ -31,7 +32,9 @@ GEMINI_IMAGE_PROMPT = (
     "You are solving a multiple-choice quiz from the screenshot. "
     "Return valid JSON only (no markdown) using this schema: "
     '{"question_type":"multiple_choice|free_response","explanation":"string","verification":"string","answer":"A or final response","free_response_answer":"string"}. '
-    "Set question_type to free_response if the question requires a typed/open response. "
+    "Set question_type to free_response if the question requires a typed/open response OR if it is a check-all-that-apply/select-all-that-apply question. "
+    "For check-all-that-apply, put the final selected options in free_response_answer as a short comma-separated list like 'A, C, D' (letters/options only). "
+    "If the question is free-response, be extremely concise totalling no more than 2 sentences such that it will all fit in one windows notification popup. "
     "The explanation must briefly explain the choice. "
     "The verification must briefly verify why alternatives are less likely. "
     "For multiple_choice, answer must be a single uppercase letter only. "
@@ -256,10 +259,18 @@ class TrayScreenshotApp:
         free_response_answer = parsed_json.get("free_response_answer")
         if isinstance(free_response_answer, str) and free_response_answer.strip():
             return free_response_answer.strip()
+        if isinstance(free_response_answer, list):
+            option_tokens = [str(item).strip() for item in free_response_answer if str(item).strip()]
+            if option_tokens:
+                return ", ".join(option_tokens)
 
         fallback_answer = parsed_json.get("answer")
         if isinstance(fallback_answer, str) and fallback_answer.strip():
             return fallback_answer.strip()
+        if isinstance(fallback_answer, list):
+            option_tokens = [str(item).strip() for item in fallback_answer if str(item).strip()]
+            if option_tokens:
+                return ", ".join(option_tokens)
 
         return None
 
@@ -299,6 +310,10 @@ class TrayScreenshotApp:
         with self.gemini_error_log_file.open("a", encoding="utf-8") as handle:
             handle.write(f"[{timestamp}] image={image_path}\n")
             handle.write(f"error={error_message}\n\n")
+        with self.gemini_output_log_file.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{timestamp}] image={image_path}\n")
+            handle.write("error=\n")
+            handle.write(f"{error_message.strip()}\n\n")
         return self.gemini_error_log_file
 
     def _log_gemini_output(self, image_path: Path, response_text: str) -> Path:
@@ -347,8 +362,9 @@ class TrayScreenshotApp:
                 if answer_letter is not None:
                     self._set_answer_letter_icon(answer_letter)
             self._notify_gemini_response(response_text)
-        except RuntimeError as exc:  # pragma: no cover
-            log_file = self._log_gemini_error(image_path=image_path, error_message=str(exc))
+        except Exception as exc:  # pragma: no cover
+            detailed_error = f"{exc}\n{traceback.format_exc()}"
+            log_file = self._log_gemini_error(image_path=image_path, error_message=detailed_error)
             _ = log_file
         finally:
             self._set_capture_blocked(False)
@@ -375,7 +391,9 @@ class TrayScreenshotApp:
             self._wait_for_image_ready(saved_path)
             self._start_gemini_analysis(saved_path)
             return saved_path
-        except (OSError, ValueError, RuntimeError):
+        except Exception as exc:
+            detailed_error = f"{exc}\n{traceback.format_exc()}"
+            self._log_gemini_error(image_path=output_file, error_message=detailed_error)
             self._set_capture_blocked(False)
             self._sync_coordinate_status_icon()
             raise
@@ -402,8 +420,10 @@ class TrayScreenshotApp:
             with self._state_lock:
                 self._captured_top_left_revision = top_left_revision
                 self._captured_bottom_right_revision = bottom_right_revision
-        except (OSError, ValueError, RuntimeError) as exc:  # pragma: no cover
-            _ = exc
+        except Exception as exc:  # pragma: no cover
+            detailed_error = f"{exc}\n{traceback.format_exc()}"
+            image_stub = self.output_directory / "capture_failed_hotkey.png"
+            self._log_gemini_error(image_path=image_stub, error_message=detailed_error)
         finally:
             self._sync_coordinate_status_icon()
 
@@ -521,8 +541,10 @@ class TrayScreenshotApp:
 
         try:
             self._capture_now()
-        except (OSError, ValueError, RuntimeError) as exc:  # pragma: no cover
-            _ = exc
+        except Exception as exc:  # pragma: no cover
+            detailed_error = f"{exc}\n{traceback.format_exc()}"
+            image_stub = self.output_directory / "capture_failed_manual.png"
+            self._log_gemini_error(image_path=image_stub, error_message=detailed_error)
 
     def _on_next_icon(self, _icon: Any, _item: Any) -> None:
         self._set_next_icon()
