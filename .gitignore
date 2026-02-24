@@ -39,3 +39,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Generated screenshots and Gemini logs
+*.png
+logs/gemini_output*.txt
+logs/gemini_error*.txt
+logs/free_response*.txt
+logs/free_reponse*.txt
+logs/*.txt
