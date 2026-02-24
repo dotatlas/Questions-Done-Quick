@@ -1,0 +1,6 @@
+[2026-02-23T22:14:34] image=snips\snippet_20260223_221428.png
+response=
+```json
+{"question_type": "multiple_choice", "explanation": "The Mean Squared Error (MSE) is calculated as the average of the squared differences between actual and predicted values. \n1. Calculate the errors: (10-12) = -2, (8-7) = 1, (6-9) = -3.\n2. Square the errors: (-2)^2 = 4, (1)^2 = 1, (-3)^2 = 9.\n3. Sum the squared errors: 4 + 1 + 9 = 14.\n4. Divide by the number of observations (n=3): MSE = 14 / 3.", "verification": "Option A (2), Option B (3), and Option D (5) do not result from the correct application of the MSE formula. For example, summing the absolute errors (2+1+3=6) and dividing by 3 would give 2, but MSE requires squaring the errors first. Other options do not align with the correct calculation of squared differences summed and then averaged.", "answer": "C"}
+```
+
